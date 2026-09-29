@@ -1,4 +1,5 @@
 from datetime import datetime
+import sqlite3
 import pytesseract
 import pandas as pd
 from PIL import Image
