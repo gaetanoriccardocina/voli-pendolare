@@ -1,5 +1,6 @@
 from datetime import datetime
 import sqlite3
+import re
 import pytesseract
 import pandas as pd
 from PIL import Image
@@ -83,16 +84,17 @@ default_pnr = ''
 default_costo = 0.0
 
 # --- GESTIONE OCR PER SCREENSHOT ---
-import re  # Ricordati di aggiungere import re in cima se non c'è già, oppure usiamo i metodi standard
 
 # Valori predefiniti di base
-default_data = datetime.today()
+default_dataimport re  # Ricordati di aggiungere import re in cima se non c'è già, oppure usiamo i metodi standard
+ = datetime.today()
 default_tratta = "FCO - PMO"
 default_compagnia = "ITA Airways"
 default_pnr = ""
 default_costo = 0.0
 
 # --- GESTIONE OCR E ESTRAZIONE AUTOMATICA ---
+# --- GESTIONE OCR E ESTRAZIONE AUTOMATICA (LAYOUT RYANAIR) ---
 if file_caricato is not None:
   try:
     if file_caricato.type in ["image/png", "image/jpeg", "image/jpg"]:
@@ -103,62 +105,43 @@ if file_caricato is not None:
       with st.sidebar.expander("🔍 Visualizza testo letto dall'immagine"):
         st.text(testo_estratto)
 
-      # --- LOGICA DI ESTRAZIONE INTELLIGENTE ---
       testo_upper = testo_estratto.upper()
 
-      # 1. Cerca il PNR (di solito è un codice alfanumerico di 6 caratteri dopo la scritta PNR o BOOKING)
-      # Cerchiamo parole da 6 caratteri maiuscoli vicine a PNR o simili
-      match_pnr = re.search(r"(?:PNR|BOOKING|CODICE).*?([A-Z0-9]{6})", testo_upper)
+      # 1. Estrazione PNR (Cerca la parola PRENOTAZIONE seguita dal codice di 6 caratteri)[cite: 1]
+      match_pnr = re.search(r"PRENOTAZIONE\s*([A-Z0-9]{6})", testo_upper)
       if match_pnr:
         default_pnr = match_pnr.group(1)
 
-      # 2. Cerca la tratta (es. FCO, PMO, LIN, MXP)
-      if "FCO" in testo_upper and "PMO" in testo_upper:
-        # Se compaiono entrambe, cerchiamo di capire l'ordine o impostiamo la rotta
-        if testo_upper.find("FCO") < testo_upper.find("PMO"):
-          default_tratta = "FCO - PMO"
-        else:
-          default_tratta = "PMO - FCO"
+      # 2. Riconoscimento Compagnia (Se legge FR o Ryanair)[cite: 1]
+      if "FR" in testo_upper or "RYANAIR" in testo_upper:
+        default_compagnia = "Ryanair"
 
-      # 3. Cerca il prezzo (cerca simboli € seguiti da numeri o importi)
-      match_prezzo = re.search(
-          r"(?:EUR|€|TOTAL|TOTALE)\D*(\d+[\.,]\d{2})", testo_upper
-      )
-      if match_prezzo:
-        # Pulisce il formato e lo converte in float
-        prezzo_str = match_prezzo.group(1).replace(",", ".")
-        default_costo = float(prezzo_str)
+      # 3. Riconoscimento Tratta (Roma / Fiumicino -> Palermo)[cite: 1]
+      if (
+          "ROMA" in testo_upper
+          or "FIUMICINO" in testo_upper
+          or "FCO" in testo_upper
+      ):
+        if "PALERMO" in testo_upper or "PMO" in testo_upper:
+          default_tratta = "FCO - PMO"
+
+      # 4. Estrazione Orario di Partenza (cerca il primo orario nel formato HH:MM)[cite: 1]
+      match_ora = re.search(r"(\d{2}:\d{2})", testo_upper)
+      if match_ora:
+        ora_str = match_ora.group(1)
+        try:
+          default_ora = datetime.strptime(ora_str, "%H:%M").time()
+        except:
+          pass
 
       st.sidebar.info(
-          "💡 Campi precompilati automaticamente in base allo screenshot!"
+          "💡 Campi precompilati automaticamente dallo screenshot di Ryanair!"
       )
 
     else:
       st.sidebar.info("File PDF caricato.")
   except Exception as e:
     st.sidebar.error(f"Errore durante l'analisi automatica: {e}")
-
-st.sidebar.subheader('Dettagli Volo')
-with st.sidebar.form('form_volo'):
-  data_volo = st.date_input('Data del Volo', value=default_data)
-  ora_volo = st.time_input(
-      'Ora di Partenza', value=datetime.strptime('18:00', '%H:%M').time()
-  )
-  tratta = st.selectbox('Tratta', ['FCO - PMO', 'PMO - FCO', 'Altra'])
-  compagnia = st.text_input('Compagnia Aerea', value=default_compagnia)
-  pnr = st.text_input('Codice PNR / Prenotazione', value=default_pnr)
-  costo = st.number_input(
-      'Costo Biglietto (€)', min_value=0.0, format='%.2f', value=default_costo
-  )
-
-  submit = st.form_submit_button('Salva Volo')
-
-  if submit:
-    data_ora_str = f'{data_volo} {ora_volo}'
-    aggiungi_volo(data_ora_str, tratta, compagnia, pnr.upper(), costo)
-    st.sidebar.success('Volo salvato con successo!')
-    st.rerun()
-
 # --- DASHBOARD PRINCIPALE ---
 df_voli = ottieni_voli()
 
