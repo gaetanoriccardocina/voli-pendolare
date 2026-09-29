@@ -83,22 +83,60 @@ default_pnr = ''
 default_costo = 0.0
 
 # --- GESTIONE OCR PER SCREENSHOT ---
+import re  # Ricordati di aggiungere import re in cima se non c'è già, oppure usiamo i metodi standard
+
+# Valori predefiniti di base
+default_data = datetime.today()
+default_tratta = "FCO - PMO"
+default_compagnia = "ITA Airways"
+default_pnr = ""
+default_costo = 0.0
+
+# --- GESTIONE OCR E ESTRAZIONE AUTOMATICA ---
 if file_caricato is not None:
   try:
-    # Se il file è un'immagine, usiamo pytesseract
-    if file_caricato.type in ['image/png', 'image/jpeg', 'image/jpg']:
+    if file_caricato.type in ["image/png", "image/jpeg", "image/jpg"]:
       image = Image.open(file_caricato)
-      # Estrazione del testo con OCR in italiano
-      testo_estratto = pytesseract.image_to_string(image, lang='ita')
+      testo_estratto = pytesseract.image_to_string(image, lang="ita")
 
-      st.sidebar.success('Screenshot analizzato con successo!')
-      with st.sidebar.expander('🔍 Visualizza testo estratto dall’OCR'):
+      st.sidebar.success("Screenshot analizzato con successo!")
+      with st.sidebar.expander("🔍 Visualizza testo letto dall'immagine"):
         st.text(testo_estratto)
 
+      # --- LOGICA DI ESTRAZIONE INTELLIGENTE ---
+      testo_upper = testo_estratto.upper()
+
+      # 1. Cerca il PNR (di solito è un codice alfanumerico di 6 caratteri dopo la scritta PNR o BOOKING)
+      # Cerchiamo parole da 6 caratteri maiuscoli vicine a PNR o simili
+      match_pnr = re.search(r"(?:PNR|BOOKING|CODICE).*?([A-Z0-9]{6})", testo_upper)
+      if match_pnr:
+        default_pnr = match_pnr.group(1)
+
+      # 2. Cerca la tratta (es. FCO, PMO, LIN, MXP)
+      if "FCO" in testo_upper and "PMO" in testo_upper:
+        # Se compaiono entrambe, cerchiamo di capire l'ordine o impostiamo la rotta
+        if testo_upper.find("FCO") < testo_upper.find("PMO"):
+          default_tratta = "FCO - PMO"
+        else:
+          default_tratta = "PMO - FCO"
+
+      # 3. Cerca il prezzo (cerca simboli € seguiti da numeri o importi)
+      match_prezzo = re.search(
+          r"(?:EUR|€|TOTAL|TOTALE)\D*(\d+[\.,]\d{2})", testo_upper
+      )
+      if match_prezzo:
+        # Pulisce il formato e lo converte in float
+        prezzo_str = match_prezzo.group(1).replace(",", ".")
+        default_costo = float(prezzo_str)
+
+      st.sidebar.info(
+          "💡 Campi precompilati automaticamente in base allo screenshot!"
+      )
+
     else:
-      st.sidebar.info('File PDF caricato (gestione PDF in sviluppo).')
+      st.sidebar.info("File PDF caricato.")
   except Exception as e:
-    st.sidebar.error(f"Errore durante l'elaborazione dell'immagine: {e}")
+    st.sidebar.error(f"Errore durante l'analisi automatica: {e}")
 
 st.sidebar.subheader('Dettagli Volo')
 with st.sidebar.form('form_volo'):
